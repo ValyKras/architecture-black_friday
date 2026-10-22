@@ -4,3 +4,4 @@ motor==3.5.3
 redis==4.4.2
 fastapi-cache2==0.2.0
 logmiddleware==0.0.4
+email-validator==2.2.0
