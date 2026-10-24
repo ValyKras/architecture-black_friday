@@ -9,7 +9,7 @@ docker compose ps -a
 
 ## Необходимо убедиться, что шарды зарегистрированы
 ```shell
-docker compose exec -T mongos mongosh --port 27020 --quiet --eval \
+docker compose exec -T mongos_router mongosh --port 27020 --quiet --eval \
 'db.adminCommand({listShards: 1})'
 ```
 Результат должен включать shard1 и shard2
