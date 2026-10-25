@@ -1,0 +1,123 @@
+name: mongo-sharding
+
+services:
+  configsvr:
+    image: mongo:7.0
+    command: ["mongod", "--configsvr", "--replSet", "config_server", "--bind_ip_all", "--port", "27017"]
+    restart: unless-stopped
+    volumes:
+      - config-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--port", "27017", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      start_period: 10s
+      retries: 12
+    networks:
+      - app-network
+
+  config-setup:
+    image: mongo:7.0
+    depends_on:
+      configsvr:
+        condition: service_healthy
+    entrypoint: ["bash", "-ec"]
+    command:
+      - |
+        mongosh --host configsvr:27017 --eval 'try { rs.status() } catch (e) { rs.initiate({_id:"config_server",configsvr:true,members:[{_id:0,host:"configsvr:27017"}]}) }'
+        until mongosh --quiet --host configsvr:27017 --eval 'quit(db.hello().isWritablePrimary ? 0 : 1)'; do sleep 2; done
+    networks:
+      - app-network
+
+  shard1:
+    image: mongo:7.0
+    command: ["mongod", "--shardsvr", "--replSet", "shard1", "--bind_ip_all", "--port", "27018"]
+    restart: unless-stopped
+    volumes:
+      - shard1-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--port", "27018", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      start_period: 10s
+      retries: 12
+    networks:
+      - app-network
+
+  shard2:
+    image: mongo:7.0
+    command: ["mongod", "--shardsvr", "--replSet", "shard2", "--bind_ip_all", "--port", "27019"]
+    restart: unless-stopped
+    volumes:
+      - shard2-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--port", "27019", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      start_period: 10s
+      retries: 12
+    networks:
+      - app-network
+
+  mongos:
+    image: mongo:7.0
+    command: ["mongos", "--configdb", "config_server/configsvr:27017", "--bind_ip_all", "--port", "27020"]
+    restart: unless-stopped
+    ports:
+      - "27020:27020"
+    depends_on:
+      config-setup:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "bash -ec 'echo > /dev/tcp/127.0.0.1/27020'"]
+      interval: 5s
+      timeout: 5s
+      start_period: 15s
+      retries: 12
+    networks:
+      - app-network
+
+  mongo-setup:
+    image: mongo:7.0
+    depends_on:
+      configsvr:
+        condition: service_healthy
+      shard1:
+        condition: service_healthy
+      shard2:
+        condition: service_healthy
+    entrypoint: ["bash", "-ec"]
+    command:
+      - |
+        until (echo > /dev/tcp/mongos/27020) 2>/dev/null; do sleep 1; done
+        mongosh --host shard1:27018 --eval 'try { rs.status() } catch (e) { rs.initiate({_id:"shard1",members:[{_id:0,host:"shard1:27018"}]}) }'
+        mongosh --host shard2:27019 --eval 'try { rs.status() } catch (e) { rs.initiate({_id:"shard2",members:[{_id:0,host:"shard2:27019"}]}) }'
+        until mongosh --quiet --host shard1:27018 --eval 'quit(db.hello().isWritablePrimary ? 0 : 1)' && mongosh --quiet --host shard2:27019 --eval 'quit(db.hello().isWritablePrimary ? 0 : 1)'; do sleep 2; done
+        mongosh --host mongos:27020 --eval 'const ids=db.adminCommand({listShards:1}).shards.map(s=>s._id); if (!ids.includes("shard1")) sh.addShard("shard1/shard1:27018"); if (!ids.includes("shard2")) sh.addShard("shard2/shard2:27019");'
+    networks:
+      - app-network
+
+  api:
+    build:
+      context: ./api_app
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      MONGODB_URL: mongodb://mongos:27020
+      MONGODB_DATABASE_NAME: somedb
+    depends_on:
+      mongo-setup:
+        condition: service_completed_successfully
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  config-data:
+  shard1-data:
+  shard2-data:

@@ -1,23 +1,35 @@
 services:
   mongodb1:
-    container_name: mongodb1
-    image: dh-mirror.gitverse.ru/mongo:latest
+    image: mongo:7
+    restart: unless-stopped
     volumes:
       - mongodb1_data_container:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   pymongo_api:
-    container_name: pymongo_api
-    build: 
-      context: api_app
+    build:
+      context: ./api_app
       dockerfile: Dockerfile
+    restart: unless-stopped
     depends_on:
-      - mongodb1
+      mongodb1:
+        condition: service_healthy
     ports:
-      - 8080:8080
+      - "8080:8080"
     environment:
-      MONGODB_URL: "mongodb://mongodb1"
-      MONGODB_DATABASE_NAME: "somedb"
-
+      MONGODB_URL: mongodb://mongodb1:27017
+      MONGODB_DATABASE_NAME: somedb
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/', timeout=3)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
 volumes:
   mongodb1_data_container:

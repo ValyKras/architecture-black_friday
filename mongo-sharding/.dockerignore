@@ -1,0 +1,18 @@
+# Python application and MongoDB operational files
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.git/
+.gitignore
+.vscode/
+.idea/
+.DS_Store
