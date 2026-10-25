@@ -1,5 +1,12 @@
 name: sharding-repl-cache
 
+x-mongo-healthcheck: &mongo-healthcheck
+  test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand({ping: 1}).ok"]
+  interval: 5s
+  timeout: 5s
+  retries: 20
+  start_period: 15s
+
 services:
   configSrv:
     image: mongo:7.0
@@ -9,20 +16,8 @@ services:
     networks: [app-network]
     volumes:
       - config-data:/data/db
-      - ./scripts/init-config-replica.js:/docker-entrypoint-initdb.d/init-config-replica.js:ro
-    command:
-      - --configsvr
-      - --replSet
-      - config_server
-      - --bind_ip_all
-      - --port
-      - "27017"
-    healthcheck:
-      test: ["CMD", "mongosh", "--port", "27017", "--eval", "db.adminCommand('ping')"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 15s
+    command: ["mongod", "--configsvr", "--replSet", "config_server", "--bind_ip_all", "--port", "27017"]
+    healthcheck: *mongo-healthcheck
 
   shard1_1:
     image: mongo:7.0
@@ -32,13 +27,10 @@ services:
     networks: [app-network]
     volumes:
       - shard1-1-data:/data/db
-    command: ["--shardsvr", "--replSet", "shard1", "--bind_ip_all", "--port", "27018"]
+    command: ["mongod", "--shardsvr", "--replSet", "shard1", "--bind_ip_all", "--port", "27018"]
     healthcheck:
-      test: ["CMD", "mongosh", "--port", "27018", "--eval", "db.adminCommand('ping')"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 10s
+      <<: *mongo-healthcheck
+      test: ["CMD", "mongosh", "--quiet", "--port", "27018", "--eval", "db.adminCommand({ping: 1}).ok"]
 
   shard1_2:
     image: mongo:7.0
@@ -48,13 +40,10 @@ services:
     networks: [app-network]
     volumes:
       - shard1-2-data:/data/db
-    command: ["--shardsvr", "--replSet", "shard1", "--bind_ip_all", "--port", "27028"]
+    command: ["mongod", "--shardsvr", "--replSet", "shard1", "--bind_ip_all", "--port", "27028"]
     healthcheck:
-      test: ["CMD", "mongosh", "--port", "27028", "--eval", "db.adminCommand('ping')"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 10s
+      <<: *mongo-healthcheck
+      test: ["CMD", "mongosh", "--quiet", "--port", "27028", "--eval", "db.adminCommand({ping: 1}).ok"]
 
   shard1_3:
     image: mongo:7.0
@@ -64,13 +53,10 @@ services:
     networks: [app-network]
     volumes:
       - shard1-3-data:/data/db
-    command: ["--shardsvr", "--replSet", "shard1", "--bind_ip_all", "--port", "27038"]
+    command: ["mongod", "--shardsvr", "--replSet", "shard1", "--bind_ip_all", "--port", "27038"]
     healthcheck:
-      test: ["CMD", "mongosh", "--port", "27038", "--eval", "db.adminCommand('ping')"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 10s
+      <<: *mongo-healthcheck
+      test: ["CMD", "mongosh", "--quiet", "--port", "27038", "--eval", "db.adminCommand({ping: 1}).ok"]
 
   shard2_1:
     image: mongo:7.0
@@ -80,13 +66,10 @@ services:
     networks: [app-network]
     volumes:
       - shard2-1-data:/data/db
-    command: ["--shardsvr", "--replSet", "shard2", "--bind_ip_all", "--port", "27019"]
+    command: ["mongod", "--shardsvr", "--replSet", "shard2", "--bind_ip_all", "--port", "27019"]
     healthcheck:
-      test: ["CMD", "mongosh", "--port", "27019", "--eval", "db.adminCommand('ping')"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 10s
+      <<: *mongo-healthcheck
+      test: ["CMD", "mongosh", "--quiet", "--port", "27019", "--eval", "db.adminCommand({ping: 1}).ok"]
 
   shard2_2:
     image: mongo:7.0
@@ -96,13 +79,10 @@ services:
     networks: [app-network]
     volumes:
       - shard2-2-data:/data/db
-    command: ["--shardsvr", "--replSet", "shard2", "--bind_ip_all", "--port", "27029"]
+    command: ["mongod", "--shardsvr", "--replSet", "shard2", "--bind_ip_all", "--port", "27029"]
     healthcheck:
-      test: ["CMD", "mongosh", "--port", "27029", "--eval", "db.adminCommand('ping')"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 10s
+      <<: *mongo-healthcheck
+      test: ["CMD", "mongosh", "--quiet", "--port", "27029", "--eval", "db.adminCommand({ping: 1}).ok"]
 
   shard2_3:
     image: mongo:7.0
@@ -112,13 +92,33 @@ services:
     networks: [app-network]
     volumes:
       - shard2-3-data:/data/db
-    command: ["--shardsvr", "--replSet", "shard2", "--bind_ip_all", "--port", "27039"]
+    command: ["mongod", "--shardsvr", "--replSet", "shard2", "--bind_ip_all", "--port", "27039"]
     healthcheck:
-      test: ["CMD", "mongosh", "--port", "27039", "--eval", "db.adminCommand('ping')"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 10s
+      <<: *mongo-healthcheck
+      test: ["CMD", "mongosh", "--quiet", "--port", "27039", "--eval", "db.adminCommand({ping: 1}).ok"]
+
+  init-replica-sets:
+    image: mongo:7.0
+    entrypoint: ["bash", "/scripts/setup-sharded-cluster.sh", "replica-sets"]
+    restart: "no"
+    networks: [app-network]
+    volumes:
+      - ./scripts/setup-sharded-cluster.sh:/scripts/setup-sharded-cluster.sh:ro
+    depends_on:
+      configSrv:
+        condition: service_healthy
+      shard1_1:
+        condition: service_healthy
+      shard1_2:
+        condition: service_healthy
+      shard1_3:
+        condition: service_healthy
+      shard2_1:
+        condition: service_healthy
+      shard2_2:
+        condition: service_healthy
+      shard2_3:
+        condition: service_healthy
 
   mongos_router:
     image: mongo:7.0
@@ -126,22 +126,38 @@ services:
     ports:
       - "27020:27020"
     networks: [app-network]
-    command:
-      - mongos
-      - --configdb
-      - config_server/configSrv:27017
-      - --bind_ip_all
-      - --port
-      - "27020"
+    command: ["mongos", "--configdb", "config_server/configSrv:27017", "--bind_ip_all", "--port", "27020"]
     depends_on:
-      configSrv:
-        condition: service_healthy
+      init-replica-sets:
+        condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "mongosh", "--port", "27020", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD", "mongosh", "--quiet", "--port", "27020", "--eval", "db.adminCommand({ping: 1}).ok"]
       interval: 5s
       timeout: 5s
-      retries: 12
-      start_period: 45s
+      retries: 30
+      start_period: 20s
+
+  init-sharding:
+    image: mongo:7.0
+    entrypoint: ["bash", "/scripts/setup-sharded-cluster.sh", "sharding"]
+    restart: "no"
+    networks: [app-network]
+    volumes:
+      - ./scripts/setup-sharded-cluster.sh:/scripts/setup-sharded-cluster.sh:ro
+    depends_on:
+      mongos_router:
+        condition: service_healthy
+
+  check-sharded-cluster:
+    image: mongo:7.0
+    profiles: ["tools"]
+    entrypoint: ["bash", "/scripts/setup-sharded-cluster.sh", "check"]
+    networks: [app-network]
+    volumes:
+      - ./scripts/setup-sharded-cluster.sh:/scripts/setup-sharded-cluster.sh:ro
+    depends_on:
+      mongos_router:
+        condition: service_healthy
 
   redis:
     image: redis:7-alpine
@@ -171,10 +187,16 @@ services:
       REDIS_URL: redis://redis:6379/0
     networks: [app-network]
     depends_on:
-      mongos_router:
-        condition: service_healthy
+      init-sharding:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
 networks:
   app-network:
